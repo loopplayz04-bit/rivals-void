@@ -76,7 +76,7 @@ local KTitle = Instance.new("TextLabel")
 KTitle.Size = UDim2.new(1,0,0,36)
 KTitle.Position = UDim2.new(0,0,0,14)
 KTitle.BackgroundTransparency = 1
-KTitle.Text = "Zhiro Hub"
+KTitle.Text = "VOID VAULT"
 KTitle.TextColor3 = Color3.fromRGB(255,255,255)
 KTitle.TextSize = 24
 KTitle.Font = Enum.Font.GothamBold
@@ -698,7 +698,7 @@ local C = {
 }
 
 local MGui = Instance.new("ScreenGui")
-MGui.Name = "ZhiroHub"
+MGui.Name = "VoidVault"
 MGui.ResetOnSpawn = false
 MGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 safeParent(MGui)
@@ -779,7 +779,7 @@ TIconGrad.Parent = TIcon
 local TIconLbl = Instance.new("TextLabel")
 TIconLbl.Size = UDim2.new(1,0,1,0)
 TIconLbl.BackgroundTransparency = 1
-TIconLbl.Text = "Z"
+TIconLbl.Text = "V"
 TIconLbl.TextColor3 = C.white
 TIconLbl.TextSize = 18
 TIconLbl.Font = Enum.Font.GothamBold
@@ -789,7 +789,7 @@ local TTitle = Instance.new("TextLabel")
 TTitle.Size = UDim2.new(0, 120, 0, 22)
 TTitle.Position = UDim2.new(0, 54, 0, 8)
 TTitle.BackgroundTransparency = 1
-TTitle.Text = "Zhiro Hub"
+TTitle.Text = "VOID VAULT"
 TTitle.TextColor3 = C.white
 TTitle.TextSize = 16
 TTitle.Font = Enum.Font.GothamBold
@@ -1456,6 +1456,6 @@ TweenService:Create(TIconLbl, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.Eas
     Rotation = 0
 }):Play()
 
-print("✓ Zhiro Hub | Rivals loaded")
+print("✓ VOID VAULT | Rivals loaded")
 print("Discord: discord.gg/t9E2DzwFcV")
 print("Hold Q to aim | RightShift to toggle")
