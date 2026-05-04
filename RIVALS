@@ -310,6 +310,7 @@ local CFG = {
     FOVRadius       = 150,
     ShowFOV         = true,
     WallCheck       = true,
+    NoRecoil        = false,
     
     -- ESP
     ESPEnabled      = false,
@@ -524,6 +525,53 @@ RunService.RenderStepped:Connect(function()
     if not onScreen then return end
     
     moveCamera(Vector2.new(sp.X, sp.Y))
+end)
+
+-- ============================================================
+-- NO RECOIL (Client-Side Camera Only - Safe)
+-- ============================================================
+local oldCameraCFrame = nil
+local recoilConnection = nil
+
+local function setupNoRecoil()
+    if recoilConnection then
+        recoilConnection:Disconnect()
+        recoilConnection = nil
+    end
+    
+    if not CFG.NoRecoil then return end
+    
+    -- Only stabilize camera, don't touch server values
+    recoilConnection = RunService.RenderStepped:Connect(function()
+        if not CFG.NoRecoil then return end
+        
+        local char = getChar()
+        if not char then return end
+        
+        local tool = char:FindFirstChildOfClass("Tool")
+        if not tool then 
+            oldCameraCFrame = nil
+            return 
+        end
+        
+        -- Smooth camera stabilization (reduces visual recoil only)
+        if oldCameraCFrame then
+            local currentCF = Camera.CFrame
+            local stabilized = oldCameraCFrame:Lerp(currentCF, 0.7)
+            Camera.CFrame = stabilized
+        end
+        
+        oldCameraCFrame = Camera.CFrame
+    end)
+end
+
+-- Character respawn handler
+LocalPlayer.CharacterAdded:Connect(function()
+    oldCameraCFrame = nil
+    if CFG.NoRecoil then
+        task.wait(1)
+        setupNoRecoil()
+    end
 end)
 
 -- ============================================================
@@ -926,10 +974,80 @@ Win.Parent = MGui
 
 Instance.new("UICorner", Win).CornerRadius = UDim.new(0, 12)
 
+-- ============================================================
+-- ANIMATED PARTICLES
+-- ============================================================
+local ParticleContainer = Instance.new("Frame")
+ParticleContainer.Size = UDim2.new(1, 0, 1, 0)
+ParticleContainer.BackgroundTransparency = 1
+ParticleContainer.ClipsDescendants = true
+ParticleContainer.ZIndex = 1
+ParticleContainer.Parent = Win
+
+-- Create floating particles
+local particles = {}
+for i = 1, 15 do
+    local particle = Instance.new("Frame")
+    particle.Size = UDim2.new(0, math.random(3, 8), 0, math.random(3, 8))
+    particle.Position = UDim2.new(math.random(), 0, math.random(), 0)
+    particle.BackgroundColor3 = Color3.fromRGB(120, 80, 255)
+    particle.BackgroundTransparency = math.random(40, 80) / 100
+    particle.BorderSizePixel = 0
+    particle.ZIndex = 2
+    particle.Parent = ParticleContainer
+    
+    Instance.new("UICorner", particle).CornerRadius = UDim.new(1, 0)
+    
+    -- Add glow effect
+    local glow = Instance.new("ImageLabel")
+    glow.Size = UDim2.new(2, 0, 2, 0)
+    glow.Position = UDim2.new(-0.5, 0, -0.5, 0)
+    glow.BackgroundTransparency = 1
+    glow.Image = "rbxassetid://6014261993"
+    glow.ImageColor3 = Color3.fromRGB(150, 100, 255)
+    glow.ImageTransparency = 0.7
+    glow.ScaleType = Enum.ScaleType.Slice
+    glow.SliceCenter = Rect.new(49,49,450,450)
+    glow.ZIndex = 1
+    glow.Parent = particle
+    
+    table.insert(particles, {
+        frame = particle,
+        speedX = (math.random() - 0.5) * 0.3,
+        speedY = (math.random() - 0.5) * 0.3,
+        size = particle.Size.X.Offset
+    })
+end
+
+-- Animate particles
+task.spawn(function()
+    while Win and Win.Parent do
+        for _, p in ipairs(particles) do
+            local currentPos = p.frame.Position
+            local newX = currentPos.X.Scale + p.speedX * 0.01
+            local newY = currentPos.Y.Scale + p.speedY * 0.01
+            
+            -- Wrap around edges
+            if newX > 1.1 then newX = -0.1 end
+            if newX < -0.1 then newX = 1.1 end
+            if newY > 1.1 then newY = -0.1 end
+            if newY < -0.1 then newY = 1.1 end
+            
+            p.frame.Position = UDim2.new(newX, 0, newY, 0)
+            
+            -- Pulse effect
+            local pulse = math.sin(tick() * 2 + newX * 10) * 0.5 + 0.5
+            p.frame.BackgroundTransparency = 0.4 + pulse * 0.4
+        end
+        task.wait(0.03)
+    end
+end)
+
 -- Gradient top accent
 local WinBar = Instance.new("Frame")
 WinBar.Size = UDim2.new(1, 0, 0, 4)
 WinBar.BorderSizePixel = 0
+WinBar.ZIndex = 3
 WinBar.Parent = Win
 
 local WinBarGrad = Instance.new("UIGradient")
@@ -947,6 +1065,25 @@ task.spawn(function()
         offset = (offset + 0.008) % 1
         WinBarGrad.Offset = Vector2.new(offset, 0)
         task.wait(0.03)
+    end
+end)
+
+-- Add subtle animated background gradient
+local BgGradient = Instance.new("UIGradient")
+BgGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(10, 10, 14)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(15, 12, 20)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 14)),
+})
+BgGradient.Rotation = 45
+BgGradient.Parent = Win
+
+task.spawn(function()
+    local rotation = 45
+    while Win and Win.Parent do
+        rotation = (rotation + 0.5) % 360
+        BgGradient.Rotation = rotation
+        task.wait(0.05)
     end
 end)
 
@@ -1151,6 +1288,38 @@ Content.Parent = Win
 local tabs = {}
 local activeTab = nil
 
+-- Splash effect container
+local SplashContainer = Instance.new("Frame")
+SplashContainer.Size = UDim2.new(1, 0, 1, 0)
+SplashContainer.BackgroundTransparency = 1
+SplashContainer.ClipsDescendants = true
+SplashContainer.ZIndex = 5
+SplashContainer.Parent = Content
+
+local function createSplash(position, color)
+    local splash = Instance.new("Frame")
+    splash.Size = UDim2.new(0, 0, 0, 0)
+    splash.Position = position or UDim2.new(0.5, 0, 0.5, 0)
+    splash.AnchorPoint = Vector2.new(0.5, 0.5)
+    splash.BackgroundColor3 = color or C.accent1
+    splash.BackgroundTransparency = 0.3
+    splash.BorderSizePixel = 0
+    splash.ZIndex = 6
+    splash.Parent = SplashContainer
+    
+    Instance.new("UICorner", splash).CornerRadius = UDim.new(1, 0)
+    
+    -- Expand and fade animation
+    TweenService:Create(splash, TweenInfo.new(0.6, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+        Size = UDim2.new(1.5, 0, 1.5, 0),
+        BackgroundTransparency = 1
+    }):Play()
+    
+    task.delay(0.6, function()
+        splash:Destroy()
+    end)
+end
+
 local function switchTab(name)
     for n, t in pairs(tabs) do
         t.page.Visible = false
@@ -1161,11 +1330,30 @@ local function switchTab(name)
     end
     local t = tabs[name]
     if t then
+        -- Create splash effect at tab button position
+        local btnPos = t.btn.AbsolutePosition
+        local contentPos = Content.AbsolutePosition
+        local relativeX = (btnPos.X - contentPos.X) / Content.AbsoluteSize.X
+        local relativeY = 0
+        createSplash(UDim2.new(relativeX, 0, relativeY, 0), C.accent2)
+        
         t.page.Visible = true
         TweenService:Create(t.btn, TweenInfo.new(0.15), {
             BackgroundColor3 = C.accent1,
             TextColor3 = C.white,
         }):Play()
+        
+        -- Bounce animation on tab button
+        local origSize = t.btn.Size
+        TweenService:Create(t.btn, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Size = UDim2.new(origSize.X.Scale, origSize.X.Offset + 5, origSize.Y.Scale, origSize.Y.Offset + 5)
+        }):Play()
+        task.delay(0.1, function()
+            TweenService:Create(t.btn, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Size = origSize
+            }):Play()
+        end)
+        
         activeTab = name
     end
 end
@@ -1274,6 +1462,16 @@ local function Toggle(parent, label, default, cb)
     KS.Transparency = 0.7
     KS.Thickness = 1
     
+    -- Ripple effect container
+    local RippleContainer = Instance.new("Frame")
+    RippleContainer.Size = UDim2.new(1, 0, 1, 0)
+    RippleContainer.BackgroundTransparency = 1
+    RippleContainer.ClipsDescendants = true
+    RippleContainer.ZIndex = 2
+    RippleContainer.Parent = Row
+    
+    Instance.new("UICorner", RippleContainer).CornerRadius = UDim.new(0, 9)
+    
     local state = default
     local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad)
     
@@ -1281,11 +1479,40 @@ local function Toggle(parent, label, default, cb)
     HitBtn.Size = UDim2.new(1, 0, 1, 0)
     HitBtn.BackgroundTransparency = 1
     HitBtn.Text = ""
+    HitBtn.ZIndex = 3
     HitBtn.Parent = Row
     
     HitBtn.MouseButton1Click:Connect(function()
         state = not state
         
+        -- Create ripple effect
+        local mousePos = UserInputService:GetMouseLocation()
+        local rowPos = Row.AbsolutePosition
+        local relX = (mousePos.X - rowPos.X) / Row.AbsoluteSize.X
+        local relY = (mousePos.Y - rowPos.Y) / Row.AbsoluteSize.Y
+        
+        local ripple = Instance.new("Frame")
+        ripple.Size = UDim2.new(0, 0, 0, 0)
+        ripple.Position = UDim2.new(relX, 0, relY, 0)
+        ripple.AnchorPoint = Vector2.new(0.5, 0.5)
+        ripple.BackgroundColor3 = state and C.accent1 or C.red
+        ripple.BackgroundTransparency = 0.5
+        ripple.BorderSizePixel = 0
+        ripple.ZIndex = 1
+        ripple.Parent = RippleContainer
+        
+        Instance.new("UICorner", ripple).CornerRadius = UDim.new(1, 0)
+        
+        TweenService:Create(ripple, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            Size = UDim2.new(2, 0, 2, 0),
+            BackgroundTransparency = 1
+        }):Play()
+        
+        task.delay(0.5, function()
+            ripple:Destroy()
+        end)
+        
+        -- Knob bounce
         TweenService:Create(Knob, TweenInfo.new(0.08, Enum.EasingStyle.Quad), {
             Size = UDim2.new(0, 22, 0, 22)
         }):Play()
@@ -1295,6 +1522,7 @@ local function Toggle(parent, label, default, cb)
             }):Play()
         end)
         
+        -- Row flash
         TweenService:Create(Row, TweenInfo.new(0.08), {
             BackgroundColor3 = state and Color3.fromRGB(30, 28, 50) or Color3.fromRGB(35, 20, 20)
         }):Play()
@@ -1312,10 +1540,12 @@ local function Toggle(parent, label, default, cb)
     
     HitBtn.MouseEnter:Connect(function()
         TweenService:Create(Row, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(25,25,36) }):Play()
+        TweenService:Create(Knob, TweenInfo.new(0.1), { Size = UDim2.new(0, 19, 0, 19) }):Play()
     end)
     
     HitBtn.MouseLeave:Connect(function()
         TweenService:Create(Row, TweenInfo.new(0.1), { BackgroundColor3 = C.row }):Play()
+        TweenService:Create(Knob, TweenInfo.new(0.1), { Size = UDim2.new(0, 17, 0, 17) }):Play()
     end)
 end
 
@@ -1475,6 +1705,12 @@ end)
 Slider(aimPage, "FOV Radius (px)", 10, 500, CFG.FOVRadius, function(v)
     CFG.FOVRadius = v
     if fovCircle then fovCircle.Radius = v end
+end)
+
+SectionLabel(aimPage, "Visual Recoil")
+Toggle(aimPage, "No Recoil (Camera)",CFG.NoRecoil,      function(v) 
+    CFG.NoRecoil = v 
+    setupNoRecoil()
 end)
 
 -- ESP
