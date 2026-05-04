@@ -1696,7 +1696,7 @@ Toggle(aimPage, "Show FOV Circle",   CFG.ShowFOV,       function(v)
 end)
 
 SectionLabel(aimPage, "Tuning")
-Slider(aimPage, "Smoothing", 1, 100, math.floor(CFG.Smoothing*100), function(v)
+Slider(aimPage, "Smoothing", 1, 20, math.floor(CFG.Smoothing*100), function(v)
     CFG.Smoothing = v / 100
 end)
 Slider(aimPage, "Prediction Factor", 0, 50, math.floor(CFG.Prediction*100), function(v)
