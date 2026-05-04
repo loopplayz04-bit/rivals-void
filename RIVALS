@@ -302,26 +302,14 @@ repeat task.wait(0.1) until keyUnlocked
 local CFG = {
     -- Aimbot
     AimbotEnabled   = false,
-    LegitMode       = true,
-    SilentAim       = false,
     AimKey          = Enum.KeyCode.Q,
     AimOnClick      = true,  -- Changed from false to true (RMB by default)
-    AutoShoot       = false,
-    Triggerbot      = false,
     AimPart         = "Head",
-    Smoothing       = 0.20,  -- 20 = balanced (1/20 = 5% per frame)
+    Smoothing       = 0.15,
     Prediction      = 0.12,
     FOVRadius       = 150,
     ShowFOV         = true,
     WallCheck       = true,
-    ShakeAmount     = 0.5,
-    ReactionTime    = 0.08,
-    
-    -- Sniper Settings
-    SniperMode      = false,
-    SniperSmoothing = 0.40,  -- Slower for precision
-    SniperFOV       = 80,    -- Smaller FOV for scoped
-    SniperPrediction = 0.18, -- More prediction for long range
     
     -- ESP
     ESPEnabled      = false,
@@ -362,30 +350,6 @@ end
 local function sameTeam(player)
     if not player.Team or not LocalPlayer.Team then return false end
     return player.Team == LocalPlayer.Team
-end
-
-local function isUsingSniper()
-    -- Check if player is scoped (camera FOV is reduced)
-    local currentFOV = Camera.FieldOfView
-    if currentFOV < 50 then  -- Normal FOV is ~70, scoped is usually 15-30
-        return true
-    end
-    
-    -- Check for sniper tools in character
-    local char = getChar()
-    if char then
-        for _, tool in pairs(char:GetChildren()) do
-            if tool:IsA("Tool") then
-                local name = tool.Name:lower()
-                if name:find("sniper") or name:find("awp") or name:find("scout") or 
-                   name:find("rifle") or name:find("dmr") or name:find("marksman") then
-                    return true
-                end
-            end
-        end
-    end
-    
-    return false
 end
 
 local function applyMovement()
@@ -444,7 +408,7 @@ local function getVelocity(player)
     return Vector3.zero
 end
 
-local function getPredicted(player, usingSniper)
+local function getPredicted(player)
     local c = player.Character
     if not c then return nil end
     local part = c:FindFirstChild(CFG.AimPart)
@@ -453,26 +417,16 @@ local function getPredicted(player, usingSniper)
     local vel  = getVelocity(player)
     local dist = (part.Position - Camera.CFrame.Position).Magnitude
     local travelTime = dist / 350
-    
-    -- Use sniper prediction if specified
-    local prediction = usingSniper and CFG.SniperPrediction or CFG.Prediction
-    
-    return part.Position + vel * travelTime * prediction * 10
+    return part.Position + vel * travelTime * CFG.Prediction * 10
 end
 
 -- ============================================================
 -- AIMBOT
 -- ============================================================
-local currentTarget = nil
-local aimDelay = 0
 
 local function getBestTarget()
     local best, bestDist = nil, math.huge
     local center = Camera.ViewportSize / 2
-    
-    -- Use sniper settings if detected
-    local usingSniper = CFG.SniperMode or isUsingSniper()
-    local fovRadius = usingSniper and CFG.SniperFOV or CFG.FOVRadius
     
     for _, p in ipairs(Players:GetPlayers()) do
         if p == LocalPlayer then 
@@ -481,13 +435,13 @@ local function getBestTarget()
             local c    = p.Character
             local part = c and c:FindFirstChild(CFG.AimPart)
             if part then
-                local predicted = getPredicted(p, usingSniper) or part.Position
+                local predicted = getPredicted(p) or part.Position
                 local sp, onScreen = Camera:WorldToViewportPoint(predicted)
                 local screenPos = Vector2.new(sp.X, sp.Y)
                 
                 if onScreen then
                     local d = (screenPos - center).Magnitude
-                    if d <= fovRadius then
+                    if d <= CFG.FOVRadius then
                         if CFG.WallCheck then
                             local params = RaycastParams.new()
                             params.FilterDescendantsInstances = { LocalPlayer.Character, c }
@@ -524,50 +478,13 @@ end
 local function moveCamera(targetScreenPos)
     local center = Camera.ViewportSize / 2
     local delta  = targetScreenPos - center
-    
-    -- Check if using sniper
-    local usingSniper = CFG.SniperMode or isUsingSniper()
-    
-    -- Legit Mode: Add shake
-    if CFG.LegitMode and CFG.ShakeAmount > 0 then
-        local shakeAmount = CFG.ShakeAmount
-        if usingSniper then
-            shakeAmount = shakeAmount * 0.5  -- Less shake for snipers
-        end
-        
-        local shake = Vector2.new(
-            (math.random() - 0.5) * shakeAmount,
-            (math.random() - 0.5) * shakeAmount
-        )
-        delta = delta + shake
-    end
-    
-    -- Use sniper settings if detected
-    local smoothing = usingSniper and CFG.SniperSmoothing or CFG.Smoothing
-    
-    -- NEW SMOOTHING SYSTEM: Higher value = Smoother (slower)
-    local smoothFactor = math.max(smoothing * 100, 1)
-    local speed = 1.0 / smoothFactor
-    
-    if CFG.LegitMode then
-        speed = speed * 0.7  -- Even slower in legit mode
-    end
-    
-    -- Sniper mode: Extra precision (slower movement)
-    if usingSniper then
-        speed = speed * 0.6  -- 60% speed for precision
-    end
-    
-    local move = delta * speed
-    
-    -- Limit max movement per frame (smaller for snipers)
-    local maxPx = usingSniper and 50 or 100
+    local speed = math.clamp(CFG.Smoothing * 2, 0.05, 1.0)
+    local move  = delta * speed
+    local maxPx = 80
     if move.Magnitude > maxPx then
         move = move.Unit * maxPx
     end
-    
-    -- Don't move if too small
-    if move.Magnitude < 0.3 then return end
+    if move.Magnitude < 0.5 then return end
     
     if mousemoverel then
         pcall(mousemoverel, move.X, move.Y)
@@ -595,46 +512,18 @@ RunService.RenderStepped:Connect(function()
         and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
         or  UserInputService:IsKeyDown(CFG.AimKey)
     
-    if not holding then 
-        currentTarget = nil
-        return 
-    end
+    if not holding then return end
     
     local target = getBestTarget()
-    if not target then 
-        currentTarget = nil
-        return 
-    end
+    if not target then return end
     
-    -- Legit Mode: Reaction time
-    if CFG.LegitMode then
-        if currentTarget ~= target then
-            currentTarget = target
-            aimDelay = tick() + CFG.ReactionTime
-            return
-        end
-        if tick() < aimDelay then
-            return
-        end
-    end
-    
-    local usingSniper = CFG.SniperMode or isUsingSniper()
-    local predicted = getPredicted(target, usingSniper)
+    local predicted = getPredicted(target)
     if not predicted then return end
     
     local sp, onScreen = Camera:WorldToViewportPoint(predicted)
     if not onScreen then return end
     
     moveCamera(Vector2.new(sp.X, sp.Y))
-    
-    -- Auto Shoot (disabled in legit mode for safety)
-    if CFG.AutoShoot and not CFG.LegitMode then
-        if mouse1press and mouse1release then
-            mouse1press()
-            task.wait(0.01)
-            mouse1release()
-        end
-    end
 end)
 
 -- ============================================================
@@ -1569,11 +1458,7 @@ end
 local aimPage = CreateTab("Aim", "")
 SectionLabel(aimPage, "Aimbot")
 Toggle(aimPage, "Aimbot Enabled",    CFG.AimbotEnabled, function(v) CFG.AimbotEnabled = v end)
-Toggle(aimPage, "Legit Mode (Safer)", CFG.LegitMode, function(v) CFG.LegitMode = v end)
-Toggle(aimPage, "Silent Aim",        CFG.SilentAim,    function(v) CFG.SilentAim = v end)
 Toggle(aimPage, "Aim on RMB (click)",CFG.AimOnClick,    function(v) CFG.AimOnClick = v end)
-Toggle(aimPage, "Auto Shoot",        CFG.AutoShoot,    function(v) CFG.AutoShoot = v end)
-Toggle(aimPage, "Triggerbot",        CFG.Triggerbot,   function(v) CFG.Triggerbot = v end)
 Toggle(aimPage, "Wall Check",        CFG.WallCheck,     function(v) CFG.WallCheck = v end)
 Toggle(aimPage, "Show FOV Circle",   CFG.ShowFOV,       function(v)
     CFG.ShowFOV = v
@@ -1581,7 +1466,7 @@ Toggle(aimPage, "Show FOV Circle",   CFG.ShowFOV,       function(v)
 end)
 
 SectionLabel(aimPage, "Tuning")
-Slider(aimPage, "Smoothing (higher = smoother)", 5, 100, math.floor(CFG.Smoothing*100), function(v)
+Slider(aimPage, "Smoothing", 1, 100, math.floor(CFG.Smoothing*100), function(v)
     CFG.Smoothing = v / 100
 end)
 Slider(aimPage, "Prediction Factor", 0, 50, math.floor(CFG.Prediction*100), function(v)
@@ -1590,56 +1475,6 @@ end)
 Slider(aimPage, "FOV Radius (px)", 10, 500, CFG.FOVRadius, function(v)
     CFG.FOVRadius = v
     if fovCircle then fovCircle.Radius = v end
-end)
-
-SectionLabel(aimPage, "Sniper Settings")
-Toggle(aimPage, "Force Sniper Mode", CFG.SniperMode, function(v) CFG.SniperMode = v end)
-Slider(aimPage, "Sniper Smoothing", 10, 100, math.floor(CFG.SniperSmoothing*100), function(v)
-    CFG.SniperSmoothing = v / 100
-end)
-Slider(aimPage, "Sniper FOV", 20, 200, CFG.SniperFOV, function(v)
-    CFG.SniperFOV = v
-end)
-Slider(aimPage, "Sniper Prediction", 0, 50, math.floor(CFG.SniperPrediction*100), function(v)
-    CFG.SniperPrediction = v / 100
-end)
-
-SectionLabel(aimPage, "Legit Settings")
-Slider(aimPage, "Shake Amount", 0, 20, math.floor(CFG.ShakeAmount*10), function(v)
-    CFG.ShakeAmount = v / 10
-end)
-Slider(aimPage, "Reaction Time (s)", 0, 50, math.floor(CFG.ReactionTime*100), function(v)
-    CFG.ReactionTime = v / 100
-end)
-
--- Legit mode info
-local legitInfo = Instance.new("Frame")
-legitInfo.Size = UDim2.new(1, 0, 0, 50)
-legitInfo.BackgroundColor3 = Color3.fromRGB(80, 255, 120)
-legitInfo.BackgroundTransparency = 0.9
-legitInfo.BorderSizePixel = 0
-legitInfo.Parent = aimPage
-
-Instance.new("UICorner", legitInfo).CornerRadius = UDim.new(0, 8)
-
-local legitLbl = Instance.new("TextLabel")
-legitLbl.Size = UDim2.new(1, -20, 1, 0)
-legitLbl.Position = UDim2.new(0, 10, 0, 0)
-legitLbl.BackgroundTransparency = 1
-legitLbl.Text = "✓ Legit Mode: Safer settings\nLooks more human, less detectable"
-legitLbl.TextColor3 = Color3.fromRGB(80, 255, 120)
-legitLbl.TextSize = 11
-legitLbl.Font = Enum.Font.GothamBold
-legitLbl.TextXAlignment = Enum.TextXAlignment.Left
-legitLbl.TextYAlignment = Enum.TextYAlignment.Center
-legitLbl.Parent = legitInfo
-
--- Update legit info visibility
-task.spawn(function()
-    while legitInfo and legitInfo.Parent do
-        legitInfo.Visible = CFG.LegitMode
-        task.wait(0.1)
-    end
 end)
 
 -- ESP
