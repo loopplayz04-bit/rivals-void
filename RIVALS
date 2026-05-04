@@ -1,7 +1,7 @@
 -- ============================================================
--- Zhiro Hub | Rivals Edition
+-- VOID VAULT | Rivals Edition
 -- Join Discord for key: https://discord.gg/t9E2DzwFcV
--- Key: zhiroisthebest
+-- Key: VAULTONTOP
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -11,6 +11,31 @@ local UserInputService = game:GetService("UserInputService")
 local HttpService      = game:GetService("HttpService")
 local Camera           = workspace.CurrentCamera
 local LocalPlayer      = Players.LocalPlayer
+
+-- ============================================================
+-- AUTO-SAVE SYSTEM
+-- ============================================================
+local SAVE_FILE = "VoidVault_Rivals_Data.json"
+
+local function saveKey(key)
+    if writefile then
+        pcall(function()
+            writefile(SAVE_FILE, HttpService:JSONEncode({ key = key }))
+        end)
+    end
+end
+
+local function loadKey()
+    if isfile and readfile and isfile(SAVE_FILE) then
+        local success, data = pcall(function()
+            return HttpService:JSONDecode(readfile(SAVE_FILE))
+        end)
+        if success and data and data.key then
+            return data.key
+        end
+    end
+    return nil
+end
 
 -- ============================================================
 -- Safe parent
@@ -27,17 +52,25 @@ local function safeParent(gui)
 end
 
 -- ============================================================
--- KEY SYSTEM WITH DISCORD
+-- KEY SYSTEM WITH DISCORD + AUTO-LOAD
 -- ============================================================
 
-local VALID_KEY   = "zhiroisthebest"
+local VALID_KEY   = "vaultontop"  -- Changed from "zhiroisthebest"
 local keyUnlocked = false
 
-local KGui = Instance.new("ScreenGui")
-KGui.Name = "ZhiroKey"
-KGui.ResetOnSpawn = false
-KGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-safeParent(KGui)
+-- Try to load saved key first
+local savedKey = loadKey()
+if savedKey and savedKey:lower():gsub("%s+","") == VALID_KEY then
+    keyUnlocked = true
+    print("✓ VOID VAULT | Auto-loaded saved key")
+end
+
+if not keyUnlocked then
+    local KGui = Instance.new("ScreenGui")
+    KGui.Name = "VoidVaultKey"
+    KGui.ResetOnSpawn = false
+    KGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    safeParent(KGui)
 
 local Overlay = Instance.new("Frame")
 Overlay.Size = UDim2.new(1,0,1,0)
@@ -233,8 +266,12 @@ local function tryKey()
     local val = KInput.Text:lower():gsub("%s+","")
     if val == VALID_KEY then
         KStatus.TextColor3 = Color3.fromRGB(80,255,140)
-        KStatus.Text = "✓ Access granted. Loading..."
+        KStatus.Text = "✓ Access granted. Saving key..."
         KInputStroke.Color = Color3.fromRGB(80,255,140)
+        
+        -- Save the key for auto-load next time
+        saveKey(KInput.Text)
+        
         task.wait(0.6)
         TweenService:Create(KCard, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), 
             {Position = UDim2.new(0.5,0,0.35,0)}):Play()
@@ -250,9 +287,13 @@ local function tryKey()
     end
 end
 
-KBtn.MouseButton1Click:Connect(tryKey)
-KInput.FocusLost:Connect(function(enter) if enter then tryKey() end end)
+    KBtn.MouseButton1Click:Connect(tryKey)
+    KInput.FocusLost:Connect(function(enter) if enter then tryKey() end end)
 
+    repeat task.wait(0.1) until keyUnlocked
+end
+
+-- Wait for key unlock (whether auto-loaded or manually entered)
 repeat task.wait(0.1) until keyUnlocked
 
 -- ============================================================
@@ -261,22 +302,36 @@ repeat task.wait(0.1) until keyUnlocked
 local CFG = {
     -- Aimbot
     AimbotEnabled   = false,
+    LegitMode       = true,
+    SilentAim       = false,
     AimKey          = Enum.KeyCode.Q,
-    AimOnClick      = false,
+    AimOnClick      = true,  -- Changed from false to true (RMB by default)
+    AutoShoot       = false,
+    Triggerbot      = false,
     AimPart         = "Head",
-    Smoothing       = 0.15,
+    Smoothing       = 0.20,  -- 20 = balanced (1/20 = 5% per frame)
     Prediction      = 0.12,
     FOVRadius       = 150,
     ShowFOV         = true,
     WallCheck       = true,
+    ShakeAmount     = 0.5,
+    ReactionTime    = 0.08,
+    
+    -- Sniper Settings
+    SniperMode      = false,
+    SniperSmoothing = 0.40,  -- Slower for precision
+    SniperFOV       = 80,    -- Smaller FOV for scoped
+    SniperPrediction = 0.18, -- More prediction for long range
     
     -- ESP
     ESPEnabled      = false,
     ShowBoxes       = true,
-    ShowSkeleton    = true,
     ShowNames       = true,
     ShowDistance    = true,
     ShowHealth      = true,
+    Tracers         = false,
+    Snaplines       = false,
+    Skeleton        = false,
     MaxDistance     = 1000,
     
     -- Player
@@ -302,6 +357,35 @@ local function isAlive(player)
     if not c then return false end
     local h = c:FindFirstChildOfClass("Humanoid")
     return h and h.Health > 0
+end
+
+local function sameTeam(player)
+    if not player.Team or not LocalPlayer.Team then return false end
+    return player.Team == LocalPlayer.Team
+end
+
+local function isUsingSniper()
+    -- Check if player is scoped (camera FOV is reduced)
+    local currentFOV = Camera.FieldOfView
+    if currentFOV < 50 then  -- Normal FOV is ~70, scoped is usually 15-30
+        return true
+    end
+    
+    -- Check for sniper tools in character
+    local char = getChar()
+    if char then
+        for _, tool in pairs(char:GetChildren()) do
+            if tool:IsA("Tool") then
+                local name = tool.Name:lower()
+                if name:find("sniper") or name:find("awp") or name:find("scout") or 
+                   name:find("rifle") or name:find("dmr") or name:find("marksman") then
+                    return true
+                end
+            end
+        end
+    end
+    
+    return false
 end
 
 local function applyMovement()
@@ -360,7 +444,7 @@ local function getVelocity(player)
     return Vector3.zero
 end
 
-local function getPredicted(player)
+local function getPredicted(player, usingSniper)
     local c = player.Character
     if not c then return nil end
     local part = c:FindFirstChild(CFG.AimPart)
@@ -369,29 +453,41 @@ local function getPredicted(player)
     local vel  = getVelocity(player)
     local dist = (part.Position - Camera.CFrame.Position).Magnitude
     local travelTime = dist / 350
-    return part.Position + vel * travelTime * CFG.Prediction * 10
+    
+    -- Use sniper prediction if specified
+    local prediction = usingSniper and CFG.SniperPrediction or CFG.Prediction
+    
+    return part.Position + vel * travelTime * prediction * 10
 end
 
 -- ============================================================
 -- AIMBOT
 -- ============================================================
+local currentTarget = nil
+local aimDelay = 0
+
 local function getBestTarget()
     local best, bestDist = nil, math.huge
     local center = Camera.ViewportSize / 2
     
+    -- Use sniper settings if detected
+    local usingSniper = CFG.SniperMode or isUsingSniper()
+    local fovRadius = usingSniper and CFG.SniperFOV or CFG.FOVRadius
+    
     for _, p in ipairs(Players:GetPlayers()) do
         if p == LocalPlayer then 
+            -- Skip yourself
         elseif isAlive(p) then
             local c    = p.Character
             local part = c and c:FindFirstChild(CFG.AimPart)
             if part then
-                local predicted = getPredicted(p) or part.Position
+                local predicted = getPredicted(p, usingSniper) or part.Position
                 local sp, onScreen = Camera:WorldToViewportPoint(predicted)
                 local screenPos = Vector2.new(sp.X, sp.Y)
                 
                 if onScreen then
                     local d = (screenPos - center).Magnitude
-                    if d <= CFG.FOVRadius then
+                    if d <= fovRadius then
                         if CFG.WallCheck then
                             local params = RaycastParams.new()
                             params.FilterDescendantsInstances = { LocalPlayer.Character, c }
@@ -428,13 +524,50 @@ end
 local function moveCamera(targetScreenPos)
     local center = Camera.ViewportSize / 2
     local delta  = targetScreenPos - center
-    local speed = math.clamp(CFG.Smoothing * 2, 0.05, 1.0)
-    local move  = delta * speed
-    local maxPx = 80
+    
+    -- Check if using sniper
+    local usingSniper = CFG.SniperMode or isUsingSniper()
+    
+    -- Legit Mode: Add shake
+    if CFG.LegitMode and CFG.ShakeAmount > 0 then
+        local shakeAmount = CFG.ShakeAmount
+        if usingSniper then
+            shakeAmount = shakeAmount * 0.5  -- Less shake for snipers
+        end
+        
+        local shake = Vector2.new(
+            (math.random() - 0.5) * shakeAmount,
+            (math.random() - 0.5) * shakeAmount
+        )
+        delta = delta + shake
+    end
+    
+    -- Use sniper settings if detected
+    local smoothing = usingSniper and CFG.SniperSmoothing or CFG.Smoothing
+    
+    -- NEW SMOOTHING SYSTEM: Higher value = Smoother (slower)
+    local smoothFactor = math.max(smoothing * 100, 1)
+    local speed = 1.0 / smoothFactor
+    
+    if CFG.LegitMode then
+        speed = speed * 0.7  -- Even slower in legit mode
+    end
+    
+    -- Sniper mode: Extra precision (slower movement)
+    if usingSniper then
+        speed = speed * 0.6  -- 60% speed for precision
+    end
+    
+    local move = delta * speed
+    
+    -- Limit max movement per frame (smaller for snipers)
+    local maxPx = usingSniper and 50 or 100
     if move.Magnitude > maxPx then
         move = move.Unit * maxPx
     end
-    if move.Magnitude < 0.5 then return end
+    
+    -- Don't move if too small
+    if move.Magnitude < 0.3 then return end
     
     if mousemoverel then
         pcall(mousemoverel, move.X, move.Y)
@@ -462,18 +595,46 @@ RunService.RenderStepped:Connect(function()
         and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
         or  UserInputService:IsKeyDown(CFG.AimKey)
     
-    if not holding then return end
+    if not holding then 
+        currentTarget = nil
+        return 
+    end
     
     local target = getBestTarget()
-    if not target then return end
+    if not target then 
+        currentTarget = nil
+        return 
+    end
     
-    local predicted = getPredicted(target)
+    -- Legit Mode: Reaction time
+    if CFG.LegitMode then
+        if currentTarget ~= target then
+            currentTarget = target
+            aimDelay = tick() + CFG.ReactionTime
+            return
+        end
+        if tick() < aimDelay then
+            return
+        end
+    end
+    
+    local usingSniper = CFG.SniperMode or isUsingSniper()
+    local predicted = getPredicted(target, usingSniper)
     if not predicted then return end
     
     local sp, onScreen = Camera:WorldToViewportPoint(predicted)
     if not onScreen then return end
     
     moveCamera(Vector2.new(sp.X, sp.Y))
+    
+    -- Auto Shoot (disabled in legit mode for safety)
+    if CFG.AutoShoot and not CFG.LegitMode then
+        if mouse1press and mouse1release then
+            mouse1press()
+            task.wait(0.01)
+            mouse1release()
+        end
+    end
 end)
 
 -- ============================================================
@@ -485,6 +646,13 @@ local function removeESP(player)
     if ESPObjects[player] then
         if ESPObjects[player].hl then ESPObjects[player].hl:Destroy() end
         if ESPObjects[player].bb then ESPObjects[player].bb:Destroy() end
+        if ESPObjects[player].tracer then ESPObjects[player].tracer:Remove() end
+        if ESPObjects[player].snapline then ESPObjects[player].snapline:Remove() end
+        if ESPObjects[player].skeleton then
+            for _, line in pairs(ESPObjects[player].skeleton) do
+                line:Remove()
+            end
+        end
         ESPObjects[player] = nil
     end
 end
@@ -537,6 +705,37 @@ local function buildESP(player)
         infoL.Text = ""
         infoL.Parent = bb
         
+        -- Tracer line (from bottom center of screen)
+        local tracer = Drawing and Drawing.new("Line") or nil
+        if tracer then
+            tracer.Visible = false
+            tracer.Color = Color3.fromRGB(255, 80, 80)
+            tracer.Thickness = 1
+            tracer.Transparency = 0.7
+        end
+        
+        -- Snapline (from top center of screen)
+        local snapline = Drawing and Drawing.new("Line") or nil
+        if snapline then
+            snapline.Visible = false
+            snapline.Color = Color3.fromRGB(255, 80, 80)
+            snapline.Thickness = 1
+            snapline.Transparency = 0.7
+        end
+        
+        -- Skeleton lines
+        local skeleton = {}
+        if Drawing then
+            for i = 1, 14 do
+                local line = Drawing.new("Line")
+                line.Visible = false
+                line.Color = Color3.fromRGB(255, 255, 255)
+                line.Thickness = 1
+                line.Transparency = 1
+                skeleton[i] = line
+            end
+        end
+        
         if gethui then 
             bb.Parent = gethui()
         elseif syn and syn.protect_gui then 
@@ -545,7 +744,7 @@ local function buildESP(player)
             bb.Parent = game.CoreGui 
         end
         
-        ESPObjects[player] = { hl = hl, bb = bb }
+        ESPObjects[player] = { hl = hl, bb = bb, tracer = tracer, snapline = snapline, skeleton = skeleton }
     end
     
     if player.Character then onChar(player.Character) end
@@ -592,6 +791,116 @@ RunService.RenderStepped:Connect(function()
                 end
             end
         end
+        
+        -- Tracers (from bottom center of screen)
+        if obj.tracer and CFG.Tracers and show then
+            local c = player.Character
+            local r = c and c:FindFirstChild("HumanoidRootPart")
+            if r then
+                local pos, onScreen = Camera:WorldToViewportPoint(r.Position)
+                if onScreen then
+                    obj.tracer.Visible = true
+                    obj.tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    obj.tracer.To = Vector2.new(pos.X, pos.Y)
+                    obj.tracer.Color = sameTeam(player) and Color3.fromRGB(80,255,120) or Color3.fromRGB(255,80,80)
+                else
+                    obj.tracer.Visible = false
+                end
+            else
+                obj.tracer.Visible = false
+            end
+        elseif obj.tracer then
+            obj.tracer.Visible = false
+        end
+        
+        -- Snaplines (from top center of screen)
+        if obj.snapline and CFG.Snaplines and show then
+            local c = player.Character
+            local r = c and c:FindFirstChild("HumanoidRootPart")
+            if r then
+                local pos, onScreen = Camera:WorldToViewportPoint(r.Position)
+                if onScreen then
+                    obj.snapline.Visible = true
+                    obj.snapline.From = Vector2.new(Camera.ViewportSize.X / 2, 0)
+                    obj.snapline.To = Vector2.new(pos.X, pos.Y)
+                    obj.snapline.Color = sameTeam(player) and Color3.fromRGB(80,255,120) or Color3.fromRGB(255,80,80)
+                else
+                    obj.snapline.Visible = false
+                end
+            else
+                obj.snapline.Visible = false
+            end
+        elseif obj.snapline then
+            obj.snapline.Visible = false
+        end
+        
+        -- Skeleton
+        if obj.skeleton and CFG.Skeleton and show then
+            local c = player.Character
+            if c then
+                local parts = {
+                    Head = c:FindFirstChild("Head"),
+                    UpperTorso = c:FindFirstChild("UpperTorso") or c:FindFirstChild("Torso"),
+                    LowerTorso = c:FindFirstChild("LowerTorso") or c:FindFirstChild("Torso"),
+                    LeftUpperArm = c:FindFirstChild("LeftUpperArm") or c:FindFirstChild("Left Arm"),
+                    LeftLowerArm = c:FindFirstChild("LeftLowerArm") or c:FindFirstChild("Left Arm"),
+                    LeftHand = c:FindFirstChild("LeftHand") or c:FindFirstChild("Left Arm"),
+                    RightUpperArm = c:FindFirstChild("RightUpperArm") or c:FindFirstChild("Right Arm"),
+                    RightLowerArm = c:FindFirstChild("RightLowerArm") or c:FindFirstChild("Right Arm"),
+                    RightHand = c:FindFirstChild("RightHand") or c:FindFirstChild("Right Arm"),
+                    LeftUpperLeg = c:FindFirstChild("LeftUpperLeg") or c:FindFirstChild("Left Leg"),
+                    LeftLowerLeg = c:FindFirstChild("LeftLowerLeg") or c:FindFirstChild("Left Leg"),
+                    LeftFoot = c:FindFirstChild("LeftFoot") or c:FindFirstChild("Left Leg"),
+                    RightUpperLeg = c:FindFirstChild("RightUpperLeg") or c:FindFirstChild("Right Leg"),
+                    RightLowerLeg = c:FindFirstChild("RightLowerLeg") or c:FindFirstChild("Right Leg"),
+                    RightFoot = c:FindFirstChild("RightFoot") or c:FindFirstChild("Right Leg"),
+                }
+                
+                local connections = {
+                    {parts.Head, parts.UpperTorso},
+                    {parts.UpperTorso, parts.LowerTorso},
+                    {parts.UpperTorso, parts.LeftUpperArm},
+                    {parts.LeftUpperArm, parts.LeftLowerArm},
+                    {parts.LeftLowerArm, parts.LeftHand},
+                    {parts.UpperTorso, parts.RightUpperArm},
+                    {parts.RightUpperArm, parts.RightLowerArm},
+                    {parts.RightLowerArm, parts.RightHand},
+                    {parts.LowerTorso, parts.LeftUpperLeg},
+                    {parts.LeftUpperLeg, parts.LeftLowerLeg},
+                    {parts.LeftLowerLeg, parts.LeftFoot},
+                    {parts.LowerTorso, parts.RightUpperLeg},
+                    {parts.RightUpperLeg, parts.RightLowerLeg},
+                    {parts.RightLowerLeg, parts.RightFoot},
+                }
+                
+                for i, connection in ipairs(connections) do
+                    local line = obj.skeleton[i]
+                    if line and connection[1] and connection[2] then
+                        local pos1, onScreen1 = Camera:WorldToViewportPoint(connection[1].Position)
+                        local pos2, onScreen2 = Camera:WorldToViewportPoint(connection[2].Position)
+                        
+                        if onScreen1 and onScreen2 then
+                            line.Visible = true
+                            line.From = Vector2.new(pos1.X, pos1.Y)
+                            line.To = Vector2.new(pos2.X, pos2.Y)
+                            line.Color = sameTeam(player) and Color3.fromRGB(80,255,120) or Color3.fromRGB(255,80,80)
+                        else
+                            line.Visible = false
+                        end
+                    elseif line then
+                        line.Visible = false
+                    end
+                end
+            else
+                for _, line in pairs(obj.skeleton) do
+                    line.Visible = false
+                end
+            end
+        elseif obj.skeleton then
+            for _, line in pairs(obj.skeleton) do
+                line.Visible = false
+            end
+        end
     end
 end)
 
@@ -603,7 +912,7 @@ for _, p in ipairs(Players:GetPlayers()) do buildESP(p) end
 -- HITMARKER
 -- ============================================================
 local HGui = Instance.new("ScreenGui")
-HGui.Name = "ZhiroHM"
+HGui.Name = "VoidVaultHM"
 HGui.ResetOnSpawn = false
 safeParent(HGui)
 
@@ -1260,7 +1569,11 @@ end
 local aimPage = CreateTab("Aim", "")
 SectionLabel(aimPage, "Aimbot")
 Toggle(aimPage, "Aimbot Enabled",    CFG.AimbotEnabled, function(v) CFG.AimbotEnabled = v end)
+Toggle(aimPage, "Legit Mode (Safer)", CFG.LegitMode, function(v) CFG.LegitMode = v end)
+Toggle(aimPage, "Silent Aim",        CFG.SilentAim,    function(v) CFG.SilentAim = v end)
 Toggle(aimPage, "Aim on RMB (click)",CFG.AimOnClick,    function(v) CFG.AimOnClick = v end)
+Toggle(aimPage, "Auto Shoot",        CFG.AutoShoot,    function(v) CFG.AutoShoot = v end)
+Toggle(aimPage, "Triggerbot",        CFG.Triggerbot,   function(v) CFG.Triggerbot = v end)
 Toggle(aimPage, "Wall Check",        CFG.WallCheck,     function(v) CFG.WallCheck = v end)
 Toggle(aimPage, "Show FOV Circle",   CFG.ShowFOV,       function(v)
     CFG.ShowFOV = v
@@ -1268,7 +1581,7 @@ Toggle(aimPage, "Show FOV Circle",   CFG.ShowFOV,       function(v)
 end)
 
 SectionLabel(aimPage, "Tuning")
-Slider(aimPage, "Smoothing (higher = faster)", 1, 100, math.floor(CFG.Smoothing*100), function(v)
+Slider(aimPage, "Smoothing (higher = smoother)", 5, 100, math.floor(CFG.Smoothing*100), function(v)
     CFG.Smoothing = v / 100
 end)
 Slider(aimPage, "Prediction Factor", 0, 50, math.floor(CFG.Prediction*100), function(v)
@@ -1277,6 +1590,56 @@ end)
 Slider(aimPage, "FOV Radius (px)", 10, 500, CFG.FOVRadius, function(v)
     CFG.FOVRadius = v
     if fovCircle then fovCircle.Radius = v end
+end)
+
+SectionLabel(aimPage, "Sniper Settings")
+Toggle(aimPage, "Force Sniper Mode", CFG.SniperMode, function(v) CFG.SniperMode = v end)
+Slider(aimPage, "Sniper Smoothing", 10, 100, math.floor(CFG.SniperSmoothing*100), function(v)
+    CFG.SniperSmoothing = v / 100
+end)
+Slider(aimPage, "Sniper FOV", 20, 200, CFG.SniperFOV, function(v)
+    CFG.SniperFOV = v
+end)
+Slider(aimPage, "Sniper Prediction", 0, 50, math.floor(CFG.SniperPrediction*100), function(v)
+    CFG.SniperPrediction = v / 100
+end)
+
+SectionLabel(aimPage, "Legit Settings")
+Slider(aimPage, "Shake Amount", 0, 20, math.floor(CFG.ShakeAmount*10), function(v)
+    CFG.ShakeAmount = v / 10
+end)
+Slider(aimPage, "Reaction Time (s)", 0, 50, math.floor(CFG.ReactionTime*100), function(v)
+    CFG.ReactionTime = v / 100
+end)
+
+-- Legit mode info
+local legitInfo = Instance.new("Frame")
+legitInfo.Size = UDim2.new(1, 0, 0, 50)
+legitInfo.BackgroundColor3 = Color3.fromRGB(80, 255, 120)
+legitInfo.BackgroundTransparency = 0.9
+legitInfo.BorderSizePixel = 0
+legitInfo.Parent = aimPage
+
+Instance.new("UICorner", legitInfo).CornerRadius = UDim.new(0, 8)
+
+local legitLbl = Instance.new("TextLabel")
+legitLbl.Size = UDim2.new(1, -20, 1, 0)
+legitLbl.Position = UDim2.new(0, 10, 0, 0)
+legitLbl.BackgroundTransparency = 1
+legitLbl.Text = "✓ Legit Mode: Safer settings\nLooks more human, less detectable"
+legitLbl.TextColor3 = Color3.fromRGB(80, 255, 120)
+legitLbl.TextSize = 11
+legitLbl.Font = Enum.Font.GothamBold
+legitLbl.TextXAlignment = Enum.TextXAlignment.Left
+legitLbl.TextYAlignment = Enum.TextYAlignment.Center
+legitLbl.Parent = legitInfo
+
+-- Update legit info visibility
+task.spawn(function()
+    while legitInfo and legitInfo.Parent do
+        legitInfo.Visible = CFG.LegitMode
+        task.wait(0.1)
+    end
 end)
 
 -- ESP
@@ -1288,6 +1651,11 @@ Toggle(espPage, "Show Names",    CFG.ShowNames,    function(v) CFG.ShowNames = v
 Toggle(espPage, "Show Distance", CFG.ShowDistance, function(v) CFG.ShowDistance = v end)
 Toggle(espPage, "Show Health",   CFG.ShowHealth,   function(v) CFG.ShowHealth = v end)
 Toggle(espPage, "Hitmarker",     CFG.Hitmarker,    function(v) CFG.Hitmarker = v end)
+
+SectionLabel(espPage, "Lines")
+Toggle(espPage, "Tracers",       CFG.Tracers,      function(v) CFG.Tracers = v end)
+Toggle(espPage, "Snaplines",     CFG.Snaplines,    function(v) CFG.Snaplines = v end)
+Toggle(espPage, "Skeleton",      CFG.Skeleton,     function(v) CFG.Skeleton = v end)
 
 SectionLabel(espPage, "Range")
 Slider(espPage, "Max Distance", 50, 2000, CFG.MaxDistance, function(v) CFG.MaxDistance = v end)
